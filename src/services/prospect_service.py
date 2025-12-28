@@ -129,3 +129,21 @@ def assign_prospects(
         skipped_same_exec=skipped_same_exec,
         overwritten=overwritten,
     )
+
+
+def list_distribution_logs(executivo_id: int | None = None, limit: int | None = None) -> list[DistributionLog]:
+    with next(get_session()) as session:
+        stmt = select(DistributionLog).order_by(DistributionLog.assigned_at.desc())
+        if executivo_id:
+            stmt = stmt.where(DistributionLog.executivo_id == executivo_id)
+        if limit:
+            stmt = stmt.limit(limit)
+        return list(session.execute(stmt).scalars())
+
+
+def list_assignments(executivo_id: int | None = None) -> list[ProspectAssignment]:
+    with next(get_session()) as session:
+        stmt = select(ProspectAssignment)
+        if executivo_id:
+            stmt = stmt.where(ProspectAssignment.executivo_id == executivo_id)
+        return list(session.execute(stmt).scalars())

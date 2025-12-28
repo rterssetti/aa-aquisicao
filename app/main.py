@@ -20,7 +20,14 @@ from src.services.executive_service import (
     set_executive_active,
     update_executive,
 )
-from src.services.prospect_service import AssignmentResult, ProspectFilters, assign_prospects, filter_prospects
+from src.services.prospect_service import (
+    AssignmentResult,
+    ProspectFilters,
+    assign_prospects,
+    filter_prospects,
+    list_assignments,
+    list_distribution_logs,
+)
 
 DATA_PATH = Path("data") / "prospects.parquet"
 
@@ -133,6 +140,87 @@ if st.button("Carregar para executivo"):
         f"Total: {result.total} | Novos: {result.assigned} | "
         f"Reatribuições: {result.overwritten} | Ignorados: {result.skipped_same_exec}"
     )
+
+st.divider()
+st.header("Consultas de carga por executivo")
+
+all_execs = list_executives(active_only=False)
+executive_map_all = get_executive_map(all_execs)
+
+tab_logs, tab_assignments = st.tabs(["Distribuições recentes", "Carteira atual"])
+
+with tab_logs:
+    selected_log_exec = st.selectbox(
+        "Executivo",
+        options=[None] + list(executive_map_all.keys()),
+        format_func=lambda x: executive_map_all.get(x, "Todos"),
+    )
+
+    logs = list_distribution_logs(selected_log_exec)
+    if logs:
+        logs_df = pd.DataFrame(
+            [
+                {
+                    "Data": log.assigned_at.strftime("%Y-%m-%d %H:%M"),
+                    "Executivo atual": executive_map_all.get(log.executivo_id, log.executivo_id),
+                    "Executivo anterior": executive_map_all.get(log.previous_executivo_id, "-")
+                    if log.previous_executivo_id
+                    else "-",
+                    "CNPJ/CPF": log.cnpj_cpf,
+                    "Mês ref": log.mes_ref or "-",
+                    "Filtros": log.filters_json,
+                }
+                for log in logs
+            ]
+        )
+        st.dataframe(logs_df, use_container_width=True, height=400)
+    else:
+        st.info("Nenhuma distribuição registrada para o filtro selecionado.")
+
+with tab_assignments:
+    selected_assignment_exec = st.selectbox(
+        "Executivo",
+        options=[None] + list(executive_map_all.keys()),
+        format_func=lambda x: executive_map_all.get(x, "Todos"),
+        key="assignment_exec_selector",
+    )
+
+    assignments = list_assignments(selected_assignment_exec)
+    if assignments:
+        assignments_df = pd.DataFrame(
+            [
+                {
+                    "CNPJ/CPF": assignment.cnpj_cpf,
+                    "Executivo": executive_map_all.get(assignment.executivo_id, assignment.executivo_id),
+                    "Carregado em": assignment.assigned_at.strftime("%Y-%m-%d %H:%M"),
+                    "Mês ref": assignment.mes_ref or "-",
+                    "Filtros": assignment.filters_json,
+                }
+                for assignment in assignments
+            ]
+        )
+
+        base_columns = [
+            col
+            for col in [
+                "razao_social",
+                "nome_fantasia",
+                "nm_razao_social",
+                "nm_fantasia",
+                "segmento",
+                "unidade_federal",
+            ]
+            if col in base_df.columns
+        ]
+        if base_columns:
+            extra_info = base_df[["cnpj_cpf", *base_columns]].drop_duplicates("cnpj_cpf")
+            assignments_df = assignments_df.merge(
+                extra_info, left_on="CNPJ/CPF", right_on="cnpj_cpf", how="left"
+            ).drop(columns=["cnpj_cpf"])
+
+        st.dataframe(assignments_df, use_container_width=True, height=400)
+    else:
+        st.info("Nenhum prospecto carregado para o filtro selecionado.")
 
 st.divider()
 st.header("Executivos")
