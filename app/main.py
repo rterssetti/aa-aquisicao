@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 import sys
 
 import pandas as pd
 import pydeck as pdk
+import requests
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +39,65 @@ init_db()
 st.title("aa-aquisicao")
 
 repo = LocalFileRepository(DATA_PATH)
+
+IBGE_MUNICIPALITIES_GEOJSON_URL = (
+    "https://servicodados.ibge.gov.br/api/v2/malhas/municipios?"
+    "formato=application/vnd.geo+json&qualidade=minima"
+)
+
+
+@st.cache_data(show_spinner="Baixando geometrias municipais do IBGE...")
+def fetch_municipality_geojson() -> dict[str, Any]:
+    response = requests.get(IBGE_MUNICIPALITIES_GEOJSON_URL, timeout=60)
+    response.raise_for_status()
+    return response.json()
+
+
+def build_municipality_layer(
+    geojson: dict[str, Any],
+    municipality_counts: pd.DataFrame,
+    municipality_column: str,
+) -> pdk.Layer:
+    counts_map = {
+        str(row[municipality_column]): int(row["prospects"])
+        for _, row in municipality_counts.iterrows()
+    }
+
+    max_prospects = max(counts_map.values()) if counts_map else 0
+    max_prospects = max_prospects or 1
+
+    for feature in geojson.get("features", []):
+        code = str(feature.get("id") or feature.get("properties", {}).get("codarea", ""))
+        prospects = counts_map.get(code, 0)
+
+        intensity = prospects / max_prospects
+        fill_color = [
+            230 - int(140 * intensity),
+            100 + int(60 * intensity),
+            80,
+            50 if prospects == 0 else 160,
+        ]
+
+        feature.setdefault("properties", {})
+        feature["properties"].update(
+            {
+                "prospects": prospects,
+                "codigo_ibge": code,
+                "fill_color": fill_color,
+            }
+        )
+
+    return pdk.Layer(
+        "GeoJsonLayer",
+        geojson,
+        pickable=True,
+        stroked=False,
+        filled=True,
+        get_fill_color="properties.fill_color",
+        get_line_color=[255, 255, 255],
+        line_width_min_pixels=0.5,
+        opacity=0.6,
+    )
 
 
 def render_filters(df: pd.DataFrame) -> ProspectFilters:
@@ -111,20 +172,45 @@ end = start + page_size
 st.dataframe(filtered_df.iloc[start:end])
 
 st.subheader("Mapa")
-map_df = filtered_df[["lat", "long", "unidade_federal", "poligono"]].dropna()
-if not map_df.empty:
-    layer = pdk.Layer(
-        "ScatterplotLayer",
-        map_df,
-        get_position="[long, lat]",
-        get_radius=8000,
-        get_color="[30, 144, 255, 160]",
-        pickable=True,
-    )
-    view_state = pdk.ViewState(latitude=map_df["lat"].mean(), longitude=map_df["long"].mean(), zoom=4)
-    st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip={"text": "UF: {unidade_federal}\nPolígono: {poligono}"}))
+municipality_column: str | None = None
+for candidate in ("municipio_ibge", "poligono"):
+    if candidate in filtered_df.columns:
+        municipality_column = candidate
+        break
+
+if not municipality_column:
+    st.info("Nenhuma coluna de município encontrada no dataset para construir o mapa.")
 else:
-    st.info("Nenhum ponto para mapear com os filtros atuais.")
+    municipality_counts = (
+        filtered_df.dropna(subset=[municipality_column])
+        .assign(**{municipality_column: lambda df: df[municipality_column].astype(str)})
+        .groupby(municipality_column)
+        .size()
+        .reset_index(name="prospects")
+    )
+
+    if municipality_counts.empty:
+        st.info("Nenhum município encontrado com os filtros atuais.")
+    else:
+        try:
+            geojson = fetch_municipality_geojson()
+            layer = build_municipality_layer(geojson, municipality_counts, municipality_column)
+            view_state = pdk.ViewState(latitude=-14.235, longitude=-51.9253, zoom=3.5)
+
+            st.pydeck_chart(
+                pdk.Deck(
+                    layers=[layer],
+                    initial_view_state=view_state,
+                    tooltip={
+                        "text": "Município IBGE: {codigo_ibge}\nProspects: {prospects}",
+                    },
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.error(
+                "Não foi possível carregar as geometrias municipais do IBGE. "
+                "Verifique a conexão ou tente novamente."
+            )
 
 st.subheader("Carregar para executivo")
 executives = list_executives(active_only=True)
