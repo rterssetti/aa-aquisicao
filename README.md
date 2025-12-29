@@ -28,7 +28,7 @@ Isso cria `data/prospects.parquet` com ~50k linhas.
 python scripts/download_geojson.py
 ```
 
-O script garante a criação da pasta `data/` e salva o arquivo `municipalities.geojson` para uso offline. Use `--force` para sobrescrever um arquivo existente. Ele também realiza novas tentativas automáticas em caso de erros 5xx do serviço do IBGE.
+O script garante a criação da pasta `data/` e salva o arquivo `municipalities.geojson` para uso offline. Use `--force` para sobrescrever um arquivo existente.
 
 ## Rodar o app
 

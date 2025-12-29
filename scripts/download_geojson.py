@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import requests
-from requests.adapters import HTTPAdapter, Retry
 
 IBGE_MUNICIPALITIES_GEOJSON_URL = (
     "https://servicodados.ibge.gov.br/api/v2/malhas/municipios?"
@@ -22,25 +21,8 @@ def download_geojson(force: bool = False) -> Path:
         print(f"Arquivo já existe em {GEOJSON_PATH}. Use --force para substituir.")
         return GEOJSON_PATH
 
-    retries = Retry(
-        total=3,
-        backoff_factor=2,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["GET"],
-    )
-    session = requests.Session()
-    session.headers.update({"User-Agent": "aa-aquisicao/geojson-downloader"})
-    session.mount("https://", HTTPAdapter(max_retries=retries))
-
-    try:
-        response = session.get(IBGE_MUNICIPALITIES_GEOJSON_URL, timeout=120)
-        response.raise_for_status()
-    except requests.HTTPError as exc:  # pragma: no cover - defensive network handling
-        raise SystemExit(
-            "Falha ao baixar geometrias do IBGE após novas tentativas. "
-            "Verifique a conexão ou tente mais tarde."
-        ) from exc
-
+    response = requests.get(IBGE_MUNICIPALITIES_GEOJSON_URL, timeout=60)
+    response.raise_for_status()
     geojson = response.json()
 
     with GEOJSON_PATH.open("w", encoding="utf-8") as geojson_file:
