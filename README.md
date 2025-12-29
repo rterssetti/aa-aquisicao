@@ -22,6 +22,14 @@ python scripts/generate_dummy_data.py
 
 Isso cria `data/prospects.parquet` com ~50k linhas.
 
+## Baixar geometrias municipais do IBGE
+
+```bash
+python scripts/download_geojson.py
+```
+
+O script garante a criação da pasta `data/` e salva o arquivo `municipalities.geojson` para uso offline. Use `--force` para sobrescrever um arquivo existente.
+
 ## Rodar o app
 
 ```bash

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import sys
+import json
 from pathlib import Path
 from typing import Any
-import sys
 
 import pandas as pd
 import pydeck as pdk
@@ -48,9 +49,21 @@ IBGE_MUNICIPALITIES_GEOJSON_URL = (
 
 @st.cache_data(show_spinner="Baixando geometrias municipais do IBGE...")
 def fetch_municipality_geojson() -> dict[str, Any]:
+    local_geojson_path = PROJECT_ROOT / "data" / "municipalities.geojson"
+
+    if local_geojson_path.exists():
+        with local_geojson_path.open("r", encoding="utf-8") as geojson_file:
+            return json.load(geojson_file)
+
+    local_geojson_path.parent.mkdir(parents=True, exist_ok=True)
     response = requests.get(IBGE_MUNICIPALITIES_GEOJSON_URL, timeout=60)
     response.raise_for_status()
-    return response.json()
+    geojson = response.json()
+
+    with local_geojson_path.open("w", encoding="utf-8") as geojson_file:
+        json.dump(geojson, geojson_file)
+
+    return geojson
 
 
 def build_municipality_layer(
