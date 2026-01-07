@@ -5,3 +5,4 @@ SQLAlchemy==2.0.35
 numpy==2.1.2
 Faker==30.3.0
 requests==2.32.3
+pyshp==2.3.1

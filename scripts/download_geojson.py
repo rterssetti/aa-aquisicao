@@ -1,35 +1,25 @@
 from __future__ import annotations
 
-import argparse
-import json
+import sys
 from pathlib import Path
 
-import requests
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if not (PROJECT_ROOT / "src").exists():
+    PROJECT_ROOT = Path.cwd()
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-IBGE_MUNICIPALITIES_GEOJSON_URL = (
-    "https://servicodados.ibge.gov.br/api/v2/malhas/municipios?"
-    "formato=application/vnd.geo+json&qualidade=minima"
-)
+import argparse
+
+from src.services.geojson_service import download_municipality_geojson
+
 DATA_DIR = Path("data")
-GEOJSON_PATH = DATA_DIR / "municipalities.geojson"
 
 
 def download_geojson(force: bool = False) -> Path:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    if GEOJSON_PATH.exists() and not force:
-        print(f"Arquivo já existe em {GEOJSON_PATH}. Use --force para substituir.")
-        return GEOJSON_PATH
-
-    response = requests.get(IBGE_MUNICIPALITIES_GEOJSON_URL, timeout=60)
-    response.raise_for_status()
-    geojson = response.json()
-
-    with GEOJSON_PATH.open("w", encoding="utf-8") as geojson_file:
-        json.dump(geojson, geojson_file)
-
-    print(f"GeoJSON salvo em {GEOJSON_PATH}")
-    return GEOJSON_PATH
+    geojson_path = download_municipality_geojson(DATA_DIR, force=force)
+    print(f"GeoJSON salvo em {geojson_path}")
+    return geojson_path
 
 
 def main() -> None:
