@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import sys
-import json
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pydeck as pdk
-import requests
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +20,10 @@ from src.services.executive_service import (
     list_executives,
     set_executive_active,
     update_executive,
+)
+from src.services.geojson_service import (
+    load_municipality_geojson,
+    normalize_municipality_code,
 )
 from src.services.prospect_service import (
     AssignmentResult,
@@ -41,29 +43,20 @@ st.title("aa-aquisicao")
 
 repo = LocalFileRepository(DATA_PATH)
 
-IBGE_MUNICIPALITIES_GEOJSON_URL = (
-    "https://servicodados.ibge.gov.br/api/v2/malhas/municipios?"
-    "formato=application/vnd.geo+json&qualidade=minima"
-)
-
 
 @st.cache_data(show_spinner="Baixando geometrias municipais do IBGE...")
 def fetch_municipality_geojson() -> dict[str, Any]:
-    local_geojson_path = PROJECT_ROOT / "data" / "municipalities.geojson"
+    """Obtém e prepara as geometrias municipais do IBGE para o mapa.
 
-    if local_geojson_path.exists():
-        with local_geojson_path.open("r", encoding="utf-8") as geojson_file:
-            return json.load(geojson_file)
+    As malhas territoriais disponibilizadas no link oficial do IBGE não são um
+    GeoJSON direto: o pacote é um ZIP com Shapefile (SHP/DBF/SHX) e um arquivo
+    opcional de codificação (CPG). O fluxo abaixo salva o ZIP, detecta os
+    componentes necessários, respeita a codificação informada e transforma cada
+    registro em uma feature GeoJSON. O resultado é persistido em
+    data/municipalities.geojson para reaproveitar nas próximas sessões.
+    """
 
-    local_geojson_path.parent.mkdir(parents=True, exist_ok=True)
-    response = requests.get(IBGE_MUNICIPALITIES_GEOJSON_URL, timeout=60)
-    response.raise_for_status()
-    geojson = response.json()
-
-    with local_geojson_path.open("w", encoding="utf-8") as geojson_file:
-        json.dump(geojson, geojson_file)
-
-    return geojson
+    return load_municipality_geojson(PROJECT_ROOT / "data")
 
 
 def build_municipality_layer(
@@ -72,7 +65,7 @@ def build_municipality_layer(
     municipality_column: str,
 ) -> pdk.Layer:
     counts_map = {
-        str(row[municipality_column]): int(row["prospects"])
+        normalize_municipality_code(row[municipality_column]): int(row["prospects"])
         for _, row in municipality_counts.iterrows()
     }
 
@@ -80,7 +73,14 @@ def build_municipality_layer(
     max_prospects = max_prospects or 1
 
     for feature in geojson.get("features", []):
-        code = str(feature.get("id") or feature.get("properties", {}).get("codarea", ""))
+        properties = feature.get("properties", {})
+        code = normalize_municipality_code(
+            feature.get("id")
+            or properties.get("CD_MUN")
+            or properties.get("CD_GEOCMU")
+            or properties.get("codarea")
+            or ""
+        )
         prospects = counts_map.get(code, 0)
 
         intensity = prospects / max_prospects
