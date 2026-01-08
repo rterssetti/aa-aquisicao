@@ -43,6 +43,36 @@ st.title("aa-aquisicao")
 
 repo = LocalFileRepository(DATA_PATH)
 
+UF_OPTIONS = [
+    "AC",
+    "AL",
+    "AP",
+    "AM",
+    "BA",
+    "CE",
+    "DF",
+    "ES",
+    "GO",
+    "MA",
+    "MT",
+    "MS",
+    "MG",
+    "PA",
+    "PB",
+    "PR",
+    "PE",
+    "PI",
+    "RJ",
+    "RN",
+    "RS",
+    "RO",
+    "RR",
+    "SC",
+    "SP",
+    "SE",
+    "TO",
+]
+
 
 @st.cache_data(show_spinner="Carregando geometrias municipais do IBGE...")
 def fetch_municipality_geojson() -> dict[str, Any]:
@@ -109,17 +139,57 @@ def build_municipality_layer(
     )
 
 
-def render_filters(df: pd.DataFrame) -> ProspectFilters:
+def filter_municipality_geojson(
+    geojson: dict[str, Any],
+    municipality_codes: set[str],
+    selected_state: str,
+) -> dict[str, Any]:
+    state_keys = ("SIGLA_UF", "sigla_uf", "UF", "uf")
+    features = []
+    for feature in geojson.get("features", []):
+        properties = feature.get("properties", {})
+        state_value = None
+        for key in state_keys:
+            if key in properties:
+                state_value = properties.get(key)
+                break
+        if state_value and str(state_value).strip().upper() != selected_state:
+            continue
+
+        code = normalize_municipality_code(
+            feature.get("id")
+            or properties.get("CD_MUN")
+            or properties.get("CD_GEOCMU")
+            or properties.get("codarea")
+            or ""
+        )
+        if not code or code not in municipality_codes:
+            continue
+        features.append(feature)
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+def render_filters(df: pd.DataFrame, default_unidade_federal: str | None) -> ProspectFilters:
     st.sidebar.header("Filtros")
 
-    def multi_select(label: str, column: str) -> list[str]:
+    def multi_select(
+        label: str,
+        column: str,
+        default_values: list[str] | None = None,
+    ) -> list[str]:
         options = sorted(df[column].dropna().unique())
-        return st.sidebar.multiselect(label, options)
+        default_values = default_values or []
+        return st.sidebar.multiselect(label, options, default=default_values)
 
     cd_cnae5 = multi_select("CNAE 5", "cd_cnae5")
     cd_cnae = multi_select("CNAE", "cd_cnae")
     faixa_fat = multi_select("Faixa faturamento", "faixa_fat")
-    unidade_federal = multi_select("UF", "unidade_federal")
+    unidade_federal = multi_select(
+        "UF",
+        "unidade_federal",
+        [default_unidade_federal] if default_unidade_federal else None,
+    )
     poligono = multi_select("Polígono", "poligono")
 
     pub_credito = multi_select("Pub. crédito", "pub_credito")
@@ -159,13 +229,18 @@ def render_filters(df: pd.DataFrame) -> ProspectFilters:
 
 st.header("Distribuir prospects")
 
+selected_state = st.selectbox("Selecione o estado", options=["Selecione..."] + UF_OPTIONS)
+if selected_state == "Selecione...":
+    st.info("Selecione um estado para carregar prospects, mapa e cidades.")
+    st.stop()
+
 try:
     base_df = repo.load()
 except FileNotFoundError:
     st.error("Dataset não encontrado. Gere o arquivo em data/prospects.parquet")
     st.stop()
 
-filters = render_filters(base_df)
+filters = render_filters(base_df, selected_state)
 filtered_df = filter_prospects(repo, filters)
 
 col1, col2, col3 = st.columns(3)
@@ -202,19 +277,37 @@ else:
         st.info("Nenhum município encontrado com os filtros atuais.")
     else:
         try:
-            geojson = fetch_municipality_geojson()
-            layer = build_municipality_layer(geojson, municipality_counts, municipality_column)
-            view_state = pdk.ViewState(latitude=-14.235, longitude=-51.9253, zoom=3.5)
-
-            st.pydeck_chart(
-                pdk.Deck(
-                    layers=[layer],
-                    initial_view_state=view_state,
-                    tooltip={
-                        "text": "Município IBGE: {codigo_ibge}\nProspects: {prospects}",
-                    },
-                )
+            municipality_codes = set(
+                municipality_counts[municipality_column]
+                .dropna()
+                .astype(str)
+                .map(normalize_municipality_code)
             )
+            geojson = fetch_municipality_geojson()
+            filtered_geojson = filter_municipality_geojson(
+                geojson,
+                municipality_codes,
+                selected_state,
+            )
+            if not filtered_geojson["features"]:
+                st.info("Nenhum município encontrado para o estado selecionado.")
+            else:
+                layer = build_municipality_layer(
+                    filtered_geojson,
+                    municipality_counts,
+                    municipality_column,
+                )
+                view_state = pdk.ViewState(latitude=-14.235, longitude=-51.9253, zoom=3.5)
+
+                st.pydeck_chart(
+                    pdk.Deck(
+                        layers=[layer],
+                        initial_view_state=view_state,
+                        tooltip={
+                            "text": "Município IBGE: {codigo_ibge}\nProspects: {prospects}",
+                        },
+                    )
+                )
         except FileNotFoundError:
             st.error(
                 "Arquivo municipalities.geojson não encontrado. "
