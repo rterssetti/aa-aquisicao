@@ -143,6 +143,13 @@ def download_municipality_geojson(data_dir: Path, force: bool = False) -> Path:
 
 
 def load_municipality_geojson(data_dir: Path, force: bool = False) -> dict[str, Any]:
-    geojson_path = download_municipality_geojson(data_dir, force=force)
+    geojson_path = data_dir / GEOJSON_FILENAME
+    if not geojson_path.exists():
+        raise FileNotFoundError(
+            "Arquivo municipalities.geojson não encontrado. "
+            "Execute o script scripts/download_geojson.py antes de usar o app."
+        )
+    if force:
+        return download_municipality_geojson(data_dir, force=True)
     with geojson_path.open("r", encoding="utf-8") as geojson_file:
         return json.load(geojson_file)

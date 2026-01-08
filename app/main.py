@@ -44,16 +44,12 @@ st.title("aa-aquisicao")
 repo = LocalFileRepository(DATA_PATH)
 
 
-@st.cache_data(show_spinner="Baixando geometrias municipais do IBGE...")
+@st.cache_data(show_spinner="Carregando geometrias municipais do IBGE...")
 def fetch_municipality_geojson() -> dict[str, Any]:
-    """Obtém e prepara as geometrias municipais do IBGE para o mapa.
+    """Carrega as geometrias municipais do IBGE para o mapa.
 
-    As malhas territoriais disponibilizadas no link oficial do IBGE não são um
-    GeoJSON direto: o pacote é um ZIP com Shapefile (SHP/DBF/SHX) e um arquivo
-    opcional de codificação (CPG). O fluxo abaixo salva o ZIP, detecta os
-    componentes necessários, respeita a codificação informada e transforma cada
-    registro em uma feature GeoJSON. O resultado é persistido em
-    data/municipalities.geojson para reaproveitar nas próximas sessões.
+    O GeoJSON deve estar previamente gerado em data/municipalities.geojson por
+    meio do script scripts/download_geojson.py.
     """
 
     return load_municipality_geojson(PROJECT_ROOT / "data")
@@ -219,11 +215,13 @@ else:
                     },
                 )
             )
-        except Exception as exc:  # noqa: BLE001
+        except FileNotFoundError:
             st.error(
-                "Não foi possível carregar as geometrias municipais do IBGE. "
-                "Verifique a conexão ou tente novamente."
+                "Arquivo municipalities.geojson não encontrado. "
+                "Execute o script scripts/download_geojson.py antes de usar o mapa."
             )
+        except Exception as exc:  # noqa: BLE001
+            st.error("Não foi possível carregar as geometrias municipais do IBGE.")
 
 st.subheader("Carregar para executivo")
 executives = list_executives(active_only=True)
