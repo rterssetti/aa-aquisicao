@@ -19,7 +19,7 @@ import shapefile
 
 IBGE_MUNICIPALITIES_ZIP_URL = (
     "https://geoftp.ibge.gov.br/organizacao_do_territorio/"
-    "malhas_territoriais/2022/municipio/BR/BR_Municipios_2022.zip"
+    "malhas_territoriais/malhas_municipais/municipio_2024/Brasil/BR_Municipios_2024.zip"
 )
 
 GEOJSON_FILENAME = "municipalities.geojson"
